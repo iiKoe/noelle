@@ -122,8 +122,9 @@ std::set<DTAliases::Node *> DomTreeSummary::collectNodesOfTree (TreeType &T) {
     auto node = worklist.back();
     worklist.pop_back();
     nodes.insert(node);
-    auto children = node->getChildren();
-    for (auto child : children) worklist.push_back(child);
+    for (auto child : *node) {
+      worklist.push_back(child);
+    }
   }
 
   return nodes;
