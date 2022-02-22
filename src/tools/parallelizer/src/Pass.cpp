@@ -55,26 +55,6 @@ bool Parallelizer::runOnModule (Module &M) {
   auto verbosity = noelle.getVerbosity();
 
   /*
-   * Allocate the parallelization techniques.
-   */
-  DSWP dswp{
-    M,
-      *profiles,
-      this->forceParallelization,
-      !this->forceNoSCCPartition,
-      verbosity
-  };
-  DOALL doall{
-    noelle
-  };
-  HELIX helix{
-    M,
-      *profiles,
-      this->forceParallelization,
-      verbosity
-  };
-
-  /*
    * Collect information about C++ code we link parallelized loops with.
    */
   errs() << "Parallelizer:  Analyzing the module " << M.getName() << "\n";
@@ -152,7 +132,7 @@ bool Parallelizer::runOnModule (Module &M) {
       /*
        * Parallelize the current loop.
        */
-      auto loopIsParallelized = this->parallelizeLoop(ldi, noelle, dswp, doall, helix, heuristics);
+      auto loopIsParallelized = this->parallelizeLoop(ldi, noelle, heuristics);
 
       /*
        * Keep track of the parallelization.

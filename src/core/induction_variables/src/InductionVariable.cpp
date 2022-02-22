@@ -20,8 +20,32 @@ InductionVariable::InductionVariable  (
   PHINode *loopEntryPHI,
   SCC &scc,
   LoopEnvironment &loopEnv,
+  ScalarEvolutionReferentialExpander &referentialExpander,
+  InductionDescriptor &ID
+) : scc{scc}, loopEntryPHI{loopEntryPHI}, startValue{ID.getStartValue()}, loopEntryPHIType{loopEntryPHI->getType()},
+    stepSCEV{ID.getStep()}, computationOfStepValue{}, singleStepValue{ID.getConstIntStepValue()}, isComputedStepValueLoopInvariant{false} {
+
+  traverseCycleThroughLoopEntryPHIToGetAllIVInstructions(LS);
+  traverseConsumersOfIVInstructionsToGetAllDerivedSCEVInstructions(LS, IVM, SE);
+  collectValuesInternalAndExternalToLoopAndSCC(LS, loopEnv);
+
+  if (ID.getKind() == InductionDescriptor::InductionKind::IK_FpInduction) {
+    this->singleStepValue = cast<SCEVUnknown>(stepSCEV)->getValue();
+    this->isComputedStepValueLoopInvariant = true;
+  } else {
+    deriveStepValue(LS, SE, referentialExpander, loopEnv);
+  }
+}
+
+InductionVariable::InductionVariable  (
+  LoopStructure *LS,
+  InvariantManager &IVM,
+  ScalarEvolution &SE,
+  PHINode *loopEntryPHI,
+  SCC &scc,
+  LoopEnvironment &loopEnv,
   ScalarEvolutionReferentialExpander &referentialExpander
-) : scc{scc}, loopEntryPHI{loopEntryPHI}, startValue{nullptr},
+) : scc{scc}, loopEntryPHI{loopEntryPHI}, startValue{nullptr}, loopEntryPHIType{loopEntryPHI->getType()},
     stepSCEV{nullptr}, computationOfStepValue{}, isComputedStepValueLoopInvariant{false} {
 
   /*
@@ -266,9 +290,11 @@ void InductionVariable::deriveStepValue (
   /*
    * Fetch the SCEV for the step value.
    */
-  auto loopEntrySCEV = SE.getSCEV(loopEntryPHI);
-  assert(loopEntrySCEV->getSCEVType() == SCEVTypes::scAddRecExpr);
-  this->stepSCEV = cast<SCEVAddRecExpr>(loopEntrySCEV)->getStepRecurrence(SE);
+  if (!this->stepSCEV) {
+    auto loopEntrySCEV = SE.getSCEV(loopEntryPHI);
+    assert(loopEntrySCEV->getSCEVType() == SCEVTypes::scAddRecExpr);
+    this->stepSCEV = cast<SCEVAddRecExpr>(loopEntrySCEV)->getStepRecurrence(SE);
+  }
 
   switch (stepSCEV->getSCEVType()) {
     case SCEVTypes::scConstant:
@@ -440,9 +466,18 @@ bool InductionVariable::isStepValuePositive (void) const {
   /*
    * Check if the step value is positive
    */
-  auto p = cast<ConstantInt>(stepValue)->getValue().isStrictlyPositive();
+  if (this->loopEntryPHIType->isIntegerTy()) {
+    return cast<ConstantInt>(stepValue)->getValue().isStrictlyPositive();
+  } else {
+    assert(this->loopEntryPHIType->isFloatingPointTy());
+    auto fpValue = cast<ConstantFP>(stepValue)->getValueAPF();
+    return fpValue.isNonZero() && !fpValue.isNegative();
+  }
 
-  return p;
+}
+
+Type * InductionVariable::getIVType (void) const {
+  return loopEntryPHIType;
 }
 
 }

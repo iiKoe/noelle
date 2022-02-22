@@ -19,7 +19,7 @@
 #include "noelle/core/PDGAnalysis.hpp"
 #include "noelle/core/Noelle.hpp"
 #include "HeuristicsPass.hpp"
-#include "ParallelizationTechniqueForLoopsWithLoopCarriedDataDependences.hpp"
+#include "noelle/tools/ParallelizationTechniqueForLoopsWithLoopCarriedDataDependences.hpp"
 #include "SequentialSegment.hpp"
 #include "noelle/core/ControlFlowEquivalence.hpp"
 
@@ -34,21 +34,17 @@ namespace llvm::noelle {
        * Methods
        */
       HELIX (
-        Module &module,
-        Hot &p,
-        bool forceParallelization,
-        Verbosity v
+        Noelle &n,
+        bool forceParallelization
       );
 
       bool apply (
         LoopDependenceInfo *LDI, 
-        Noelle &par, 
         Heuristics *h
         ) override ;
 
       bool canBeAppliedToLoop (
         LoopDependenceInfo *LDI, 
-        Noelle &par, 
         Heuristics *h
         ) const override ;
 
@@ -59,24 +55,19 @@ namespace llvm::noelle {
 
       Function * getTaskFunction (void) const ;
 
-      void reset () override ;
-
     protected:
       void createParallelizableTask (
         LoopDependenceInfo *LDI,
-        Noelle &par, 
         Heuristics *h
       );
 
       bool synchronizeTask (
         LoopDependenceInfo *LDI,
-        Noelle &par, 
         Heuristics *h
       );
 
       void addChunkFunctionExecutionAsideOriginalLoop (
         LoopDependenceInfo *LDI,
-        Noelle &par,
         uint64_t numberOfSequentialSegments
       );
 

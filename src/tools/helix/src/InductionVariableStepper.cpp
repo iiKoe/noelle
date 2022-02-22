@@ -10,6 +10,7 @@
  */
 #include "HELIX.hpp"
 #include "HELIXTask.hpp"
+#include "llvm/IR/Type.h"
 
 namespace llvm::noelle {
 
@@ -86,16 +87,7 @@ void HELIX::rewireLoopForIVsToIterateNthIterations (LoopDependenceInfo *LDI) {
     auto originalIVPHI = ivInfo->getLoopEntryPHI();
     auto ivPHI = cast<PHINode>(fetchClone(originalIVPHI));
 
-    auto nthCoreOffset = entryBuilder.CreateMul(
-      stepOfIV,
-      entryBuilder.CreateZExtOrTrunc(
-        task->coreArg,
-        stepOfIV->getType()
-      ),
-      "stepSize_X_coreIdx"
-    );
-
-    auto offsetStartValue = IVUtility::offsetIVPHI(preheaderClone, ivPHI, startOfIV, nthCoreOffset);
+    auto offsetStartValue = IVUtility::computeInductionVariableValueForIteration(preheaderClone, ivPHI, startOfIV, stepOfIV, task->coreArg);
     ivPHI->setIncomingValueForBlock(preheaderClone, offsetStartValue);
   }
 
@@ -108,17 +100,11 @@ void HELIX::rewireLoopForIVsToIterateNthIterations (LoopDependenceInfo *LDI) {
     auto originalIVPHI = ivInfo->getLoopEntryPHI();
     auto ivPHI = cast<PHINode>(fetchClone(originalIVPHI));
 
-    auto jumpStepSize = entryBuilder.CreateMul(
-      stepOfIV,
-      entryBuilder.CreateSub(
-        entryBuilder.CreateZExtOrTrunc(
+    Value* numCoresMinusOne = entryBuilder.CreateSub(
           task->numCoresArg,
-          stepOfIV->getType()
-        ),
-        ConstantInt::get(stepOfIV->getType(), 1)
-      ),
-      "nCoresStepSize"
-    );
+          ConstantInt::get(task->numCoresArg->getType(), 1)
+        );
+    Value* jumpStepSize = IVUtility::scaleInductionVariableStep(preheaderClone, ivPHI, stepOfIV, numCoresMinusOne);
 
     IVUtility::stepInductionVariablePHI(preheaderClone, ivPHI, jumpStepSize);
   }

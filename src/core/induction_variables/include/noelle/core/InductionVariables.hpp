@@ -11,6 +11,7 @@
 #pragma once
 
 #include "llvm/Analysis/ScalarEvolutionExpander.h"
+#include "llvm/Analysis/IVDescriptors.h"
 #include "noelle/core/ScalarEvolutionReferencer.hpp"
 #include "noelle/core/SystemHeaders.hpp"
 #include "noelle/core/LoopsSummary.hpp"
@@ -35,6 +36,18 @@ namespace llvm::noelle {
           SCC &scc,
           LoopEnvironment &loopEnvironment,
           ScalarEvolutionReferentialExpander &referentialExpander
+          ) ;
+
+          // For LLVM IVs
+          InductionVariable  (
+          LoopStructure *LS,
+          InvariantManager &IVM,
+          ScalarEvolution &SE,
+          PHINode *loopEntryPHI,
+          SCC &scc,
+          LoopEnvironment &loopEnvironment,
+          ScalarEvolutionReferentialExpander &referentialExpander,
+          InductionDescriptor &ID
           ) ;
 
       SCC * getSCC (void) const ;
@@ -64,6 +77,8 @@ namespace llvm::noelle {
       bool isIVInstruction (Instruction *I) const;
 
       bool isDerivedFromIVInstructions (Instruction *I) const;
+
+      Type * getIVType (void) const;
 
       ~InductionVariable ();
 
@@ -135,6 +150,11 @@ namespace llvm::noelle {
       bool isComputedStepValueLoopInvariant;
 
       /*
+      * Type of the loopEntryPHI which represents the type of the whole IV
+      */
+      Type * loopEntryPHIType;
+
+      /*
        * Helper functions and structures
        */ 
       std::set<Value *> valuesToReferenceInComputingStepValue;
@@ -177,7 +197,8 @@ namespace llvm::noelle {
           InvariantManager &IVM,
           ScalarEvolution &SE,
           SCCDAG &sccdag,
-          LoopEnvironment &loopEnv
+          LoopEnvironment &loopEnv,
+          Loop &LLVMLoop
           );
 
       InductionVariableManager () = delete;

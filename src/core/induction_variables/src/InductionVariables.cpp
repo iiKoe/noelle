@@ -10,6 +10,7 @@
  */
 #include "noelle/core/InductionVariables.hpp"
 #include "noelle/core/LoopGoverningIVAttribution.hpp"
+#include "llvm/Analysis/ScalarEvolutionExpressions.h"
 
 namespace llvm::noelle {
 
@@ -18,7 +19,8 @@ InductionVariableManager::InductionVariableManager (
   InvariantManager &IVM,
   ScalarEvolution &SE,
   SCCDAG &sccdag,
-  LoopEnvironment &loopEnv
+  LoopEnvironment &loopEnv,
+  Loop &LLVMLoop
 ) : LIS{LIS}, loopToIVsMap{}, loopToGoverningIVAttrMap{} {
 
   /*
@@ -49,32 +51,49 @@ InductionVariableManager::InductionVariableManager (
     for (auto &phi : header->phis()) {
 
       /*
+       * Check if LLVM considers this PHI to be an induction variable
+       */
+      InductionDescriptor ID = InductionDescriptor();
+      bool llvmDeterminedValidIV;
+      bool llvmLoopValidForInductionAnalysis = phi.getBasicBlockIndex(LLVMLoop.getLoopPreheader()) >= 0;
+      
+      if (llvmLoopValidForInductionAnalysis && InductionDescriptor::isInductionPHI(&phi, &LLVMLoop, &SE, ID)) {
+        llvmDeterminedValidIV = true;
+      } else if (phi.getType()->isFloatingPointTy() && InductionDescriptor::isFPInductionPHI(&phi, &LLVMLoop, &SE, ID)) {
+        llvmDeterminedValidIV = true;
+      } else {
+        llvmDeterminedValidIV = false;
+      }
+
+      bool noelleDeterminedValidIV = true;
+      /*
        * Check if the PHI node can be analyzed by the SCEV analysis.
        */
-      if (!SE.isSCEVable(phi.getType())){
-        continue ;
-      }
-
-      /*
-       * Fetch the SCEV.
-       */
-      auto scev = SE.getSCEV(&phi);
-      if (!scev){
-        continue ;
-      }
-
-      /*
-       * Check if the SCEV suggests this is an induction variable.
-       */
-      if (scev->getSCEVType() != SCEVTypes::scAddRecExpr) {
-        continue;
+      if (!SE.isSCEVable(phi.getType())) {
+        noelleDeterminedValidIV = false;
+      } else {
+        /*
+         * Fetch the SCEV and check if it suggests this is an induction variable.
+         */
+        auto scev = SE.getSCEV(&phi);
+        if (!scev || scev->getSCEVType() != SCEVTypes::scAddRecExpr) {
+          noelleDeterminedValidIV = false;
+        }
       }
 
       /*
        * Allocate the induction variable.
        */
+      InductionVariable* IV = nullptr;
       auto sccContainingIV = sccdag.sccOfValue(&phi);
-      auto IV = new InductionVariable(loop.get(), IVM, SE, &phi, *sccContainingIV, loopEnv, referentialExpander); 
+      if (noelleDeterminedValidIV) {
+        IV = new InductionVariable(loop.get(), IVM, SE, &phi, *sccContainingIV, loopEnv, referentialExpander);
+      } else if (llvmDeterminedValidIV) {
+        // Construct from LLVM abstraction
+        IV = new InductionVariable(loop.get(), IVM, SE, &phi, *sccContainingIV, loopEnv, referentialExpander, ID);
+      } else {
+        continue;
+      }
 
       /*
        * Only save IVs for which the step size is understood

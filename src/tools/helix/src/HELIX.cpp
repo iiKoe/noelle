@@ -14,12 +14,10 @@
 namespace llvm::noelle{
 
 HELIX::HELIX (
-  Module &module, 
-  Hot &p,
-  bool forceParallelization,
-  Verbosity v
+  Noelle &n,
+  bool forceParallelization
   )
-  : ParallelizationTechniqueForLoopsWithLoopCarriedDataDependences{module, p, forceParallelization, v},
+  : ParallelizationTechniqueForLoopsWithLoopCarriedDataDependences{n, forceParallelization},
     loopCarriedEnvBuilder{nullptr}, 
     taskFunctionDG{nullptr},
     lastIterationExecutionBlock{nullptr},
@@ -29,17 +27,17 @@ HELIX::HELIX (
   /*
    * Fetch the LLVM context.
    */
-  auto &cxt = module.getContext();
+  auto program = this->noelle.getProgram();
 
   /*
    * Fetch the dispatcher to use to jump to a parallelized HELIX loop.
    */
-  this->taskDispatcherSS = this->module.getFunction("NOELLE_HELIX_dispatcher_sequentialSegments");
+  this->taskDispatcherSS = program->getFunction("NOELLE_HELIX_dispatcher_sequentialSegments");
   assert(this->taskDispatcherSS != nullptr);
-  this->taskDispatcherCS = this->module.getFunction("NOELLE_HELIX_dispatcher_criticalSections");
+  this->taskDispatcherCS = program->getFunction("NOELLE_HELIX_dispatcher_criticalSections");
   assert(this->taskDispatcherCS != nullptr);
-  this->waitSSCall = this->module.getFunction("HELIX_wait");
-  this->signalSSCall =  this->module.getFunction("HELIX_signal");
+  this->waitSSCall = program->getFunction("HELIX_wait");
+  this->signalSSCall = program->getFunction("HELIX_signal");
   if (!this->waitSSCall  || !this->signalSSCall) {
     errs() << "HELIX: ERROR = sync functions HELIX_wait, HELIX_signal were not both found.\n";
     abort();
@@ -48,54 +46,35 @@ HELIX::HELIX (
   /*
    * Fetch the LLVM types of the HELIX_dispatcher arguments.
    */
-  auto int8 = IntegerType::get(cxt, 8);
-  auto int64 = IntegerType::get(cxt, 64);
+  auto tm = noelle.getTypesManager();
+  auto int8 = tm->getIntegerType(8);
+  auto int64 = tm->getIntegerType(64);
+  auto ptrType = tm->getVoidPointerType();
+  auto voidType = tm->getVoidType();
 
   /*
    * Create the LLVM signature of HELIX_dispatcher.
    */
   auto funcArgTypes = ArrayRef<Type*>({
-    PointerType::getUnqual(int8),
-    PointerType::getUnqual(int8),
-    PointerType::getUnqual(int8),
-    PointerType::getUnqual(int8),
+    ptrType,
+    ptrType,
+    ptrType,
+    ptrType,
     int64,
     int64,
     PointerType::getUnqual(int64)
   });
-  this->taskSignature = FunctionType::get(Type::getVoidTy(cxt), funcArgTypes, false);
+  this->taskSignature = FunctionType::get(voidType, funcArgTypes, false);
 
   return ;
 }
 
-void HELIX::reset () {
-  ParallelizationTechnique::reset();
-  if (loopCarriedEnvBuilder) {
-    delete loopCarriedEnvBuilder;
-  }
-
-  if (taskFunctionDG) {
-    delete taskFunctionDG;
-  }
-
-  for (auto spill : spills) {
-    delete spill;
-  }
-  spills.clear();
-
-  if (this->lastIterationExecutionBlock) {
-    this->lastIterationExecutionBlock = nullptr;
-  }
-  lastIterationExecutionDuplicateMap.clear();
-
-}
-
-bool HELIX::canBeAppliedToLoop (LoopDependenceInfo *LDI, Noelle &par, Heuristics *h) const {
+bool HELIX::canBeAppliedToLoop (LoopDependenceInfo *LDI, Heuristics *h) const {
 
   /*
    * Check the parent class.
    */
-  if (!ParallelizationTechniqueForLoopsWithLoopCarriedDataDependences::canBeAppliedToLoop(LDI, par, h)){
+  if (!ParallelizationTechniqueForLoopsWithLoopCarriedDataDependences::canBeAppliedToLoop(LDI, h)){
     return false;
   }
 
@@ -113,14 +92,14 @@ bool HELIX::canBeAppliedToLoop (LoopDependenceInfo *LDI, Noelle &par, Heuristics
   /*
    * Ensure there is not too little execution that is too proportionally sequential for HELIX 
    */
-  auto profiles = par.getProfiles();
+  auto profiles = this->noelle.getProfiles();
   auto loopID = LDI->getID();
   auto loopStructure = LDI->getLoopStructure();
   auto averageInstructions = profiles->getAverageTotalInstructionsPerIteration(loopStructure);
   auto averageInstructionThreshold = 20;
   auto hasLittleExecution = averageInstructions < averageInstructionThreshold;
   auto maximumSequentialFraction = .2;
-  auto sequentialFraction = this->computeSequentialFractionOfExecution(LDI, par);
+  auto sequentialFraction = this->computeSequentialFractionOfExecution(LDI, this->noelle);
   auto hasProportionallySignificantSequentialExecution = sequentialFraction >= maximumSequentialFraction;
   if (hasLittleExecution && hasProportionallySignificantSequentialExecution) {
     errs() << "Parallelizer:    Loop " << loopID << " has "
@@ -139,7 +118,6 @@ bool HELIX::canBeAppliedToLoop (LoopDependenceInfo *LDI, Noelle &par, Heuristics
 
 bool HELIX::apply (
   LoopDependenceInfo *LDI,
-  Noelle &par,
   Heuristics *h
 ) {
 
@@ -150,18 +128,17 @@ bool HELIX::apply (
    * using the loop dependence info for that task
    */
   if (this->tasks.size() == 0) {
-    this->createParallelizableTask(LDI, par, h);
+    this->createParallelizableTask(LDI, h);
     return true;
   }
 
-  auto modified = this->synchronizeTask(LDI, par, h);
+  auto modified = this->synchronizeTask(LDI, h);
 
   return modified;
 }
 
 void HELIX::createParallelizableTask (
   LoopDependenceInfo *LDI,
-  Noelle &par, 
   Heuristics *h
 ){
 
@@ -255,7 +232,8 @@ void HELIX::createParallelizableTask (
   /*
    * Generate empty tasks for the HELIX execution.
    */
-  auto helixTask = new HELIXTask(this->taskSignature, this->module);
+  auto program = this->noelle.getProgram();
+  auto helixTask = new HELIXTask(this->taskSignature, *program);
   this->addPredecessorAndSuccessorsBasicBlocksToTasks(LDI, { helixTask });
   this->numTaskInstances = LDI->getMaximumNumberOfCores();
   assert(helixTask == this->tasks[0]);
@@ -386,7 +364,6 @@ void HELIX::createParallelizableTask (
 
 bool HELIX::synchronizeTask (
   LoopDependenceInfo *LDI,
-  Noelle &par, 
   Heuristics *h
 ){
 
@@ -550,7 +527,7 @@ bool HELIX::synchronizeTask (
   if (this->verbose >= Verbosity::Maximal) {
     errs() << "HELIX:  Linking task function\n";
   }
-  this->addChunkFunctionExecutionAsideOriginalLoop(this->originalLDI, par, sequentialSegments.size());
+  this->addChunkFunctionExecutionAsideOriginalLoop(this->originalLDI, sequentialSegments.size());
 
   /*
    * Inline calls to HELIX functions.

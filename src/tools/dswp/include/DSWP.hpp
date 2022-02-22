@@ -17,7 +17,7 @@
 #include "noelle/core/PDGAnalysis.hpp"
 #include "noelle/core/Noelle.hpp"
 #include "HeuristicsPass.hpp"
-#include "ParallelizationTechniqueForLoopsWithLoopCarriedDataDependences.hpp"
+#include "noelle/tools/ParallelizationTechniqueForLoopsWithLoopCarriedDataDependences.hpp"
 #include "DSWPTask.hpp"
 #include "noelle/core/LoopDependenceInfo.hpp"
 
@@ -30,26 +30,20 @@ namespace llvm::noelle {
        * Methods
        */
       DSWP (
-        Module &module,
-        Hot &p,
+        Noelle &par,
         bool forceParallelization,
-        bool enableSCCMerging,
-        Verbosity v
+        bool enableSCCMerging
       );
 
       bool apply (
         LoopDependenceInfo *LDI,
-        Noelle &par,
         Heuristics *h
       ) override ;
 
       bool canBeAppliedToLoop (
         LoopDependenceInfo *LDI,
-        Noelle &par,
         Heuristics *h
       ) const override ;
-
-      void reset () override ;
 
     private:
 

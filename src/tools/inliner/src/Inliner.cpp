@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 - 2019  Angelo Matni, Simone Campanoni
+ * Copyright 2016 - 2022  Angelo Matni, Simone Campanoni
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
@@ -10,8 +10,7 @@
  */
 #include "Inliner.hpp"
 
-using namespace llvm;
-using namespace llvm::noelle;
+namespace llvm::noelle {
 
 Inliner::Inliner ()
   : ModulePass{ID}
@@ -91,12 +90,6 @@ bool Inliner::runOnModule (Module &M) {
   };
   printFnInfo();
 
-  auto writeToContinueFile = []() -> void {
-    ofstream continuefile("dgsimplify_continue.txt");
-    continuefile << "1\n";
-    continuefile.close();
-  };
-
   /*
    * Fetch the profiles.
    */
@@ -120,7 +113,6 @@ bool Inliner::runOnModule (Module &M) {
   auto inlined = this->inlineCallsInvolvedInLoopCarriedDataDependences(noelle, pcg);
   if (inlined){
     errs() << "Inliner:   Inlined calls due to loop-carried data dependences\n";
-    writeToContinueFile();
 
     /*
      * Free the memory.
@@ -157,44 +149,35 @@ bool Inliner::runOnModule (Module &M) {
   /*
    * Inline functions containing targeted loops so the loop is in main
    */
-  ifstream doHoistFile("dgsimplify_do_hoist.txt");
-  auto doHoist = doHoistFile.good();
-  doHoistFile.close();
-  if (doHoist) {
-    std::string filename = "dgsimplify_loop_hoisting.txt";
-    getFunctionsToInline(filename);
+  std::string filename = "dgsimplify_loop_hoisting.txt";
+  getFunctionsToInline(filename);
 
-    auto inlined = this->inlineFnsOfLoopsToCGRoot(profiles);
-    if (inlined) {
-      errs() << "Inliner:   Inlined functions to hoist loops to the entry funtion of the program\n";
-      getAnalysis<CallGraphWrapperPass>().runOnModule(M);
-      parentFns.clear();
-      childrenFns.clear();
-      orderedCalled.clear();
-      orderedCalls.clear();
-      collectFnGraph(main);
-      collectInDepthOrderFns(main);
-      printFnOrder();
-    }
-
-    auto remaining = registerRemainingFunctions(filename);
-    if (remaining) {
-      writeToContinueFile();
-    }
-
-    printFnInfo();
-    if (!remaining && this->verbose != Verbosity::Disabled) {
-      errs() << "Inliner:   No remaining hoists\n";
-    }
-
-    /*
-     * Free the memory.
-     */
-    delete pcg;
-
-    errs() << "Inliner: Exit\n";
-    return inlined;
+  inlined = this->inlineFnsOfLoopsToCGRoot(profiles);
+  if (inlined) {
+    errs() << "Inliner:   Inlined functions to hoist loops to the entry funtion of the program\n";
+    getAnalysis<CallGraphWrapperPass>().runOnModule(M);
+    parentFns.clear();
+    childrenFns.clear();
+    orderedCalled.clear();
+    orderedCalls.clear();
+    collectFnGraph(main);
+    collectInDepthOrderFns(main);
+    printFnOrder();
   }
+
+  auto remaining = registerRemainingFunctions(filename);
+  printFnInfo();
+  if (!remaining && this->verbose != Verbosity::Disabled) {
+    errs() << "Inliner:   No remaining hoists\n";
+  }
+
+  /*
+   * Free the memory.
+   */
+  delete pcg;
+
+  errs() << "Inliner: Exit\n";
+  return inlined;
 
   /*
    * Free the memory.
@@ -278,7 +261,10 @@ bool Inliner::registerRemainingFunctions (std::string filename) {
   }
   outfile.close();
 
-  return true;
+  if (fnInds.size() > 0){
+    return true;
+  }
+  return false;
 }
 
 bool Inliner::inlineFnsOfLoopsToCGRoot (Hot *hot) {
@@ -763,4 +749,6 @@ Inliner::~Inliner () {
   for (auto l : loopSummaries) {
     delete l;
   }
+}
+
 }

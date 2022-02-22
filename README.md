@@ -30,14 +30,14 @@ You are kindly asked to acknowledge usage of the tool by citing the following pa
 ```
 
 The only documentation available for NOELLE is:
-- the paper: https://arxiv.org/abs/2102.05081
+- the [paper](http://www.cs.northwestern.edu/~simonec/files/Research/papers/HELIX_CGO_2022.pdf)
 - the comments within the code
-- the slides we use in the "Advanced Topics in Compilers" class: www.cs.northwestern.edu/~simonec/ATC.html
+- the slides we use in the class [Advanced Topics in Compilers](http://www.cs.northwestern.edu/~simonec/ATC.html)
   (Projects students do in this class are built upon NOELLE)
 
 
 ## Version
-The latest stable version is 9.5.0 (tag = `v9.5.0`).
+The latest stable version is 9.6.0 (tag = `v9.6.0`).
 
 ### Version Numbering Scheme
 The version number is in the form of \[v _Major.Minor.Revision_ \]
@@ -62,8 +62,7 @@ To enable the correct LLVM, run the following command from any node of the Zytho
 source /project/extra/llvm/9.0.0/enable
 ```
 
-The guide about the Zythos cluster can be downloaded here: 
-www.cs.northwestern.edu/~simonec/files/Research/manuals/Zythos_guide.pdf
+The guide about the Zythos cluster can be downloaded [here](http://www.cs.northwestern.edu/~simonec/files/Research/manuals/Zythos_guide.pdf).
 
 
 ## Building NOELLE

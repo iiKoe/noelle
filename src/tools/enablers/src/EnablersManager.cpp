@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 - 2020 Angelo Matni, Simone Campanoni
+ * Copyright 2019 - 2021 Angelo Matni, Simone Campanoni
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
@@ -50,16 +50,38 @@ bool EnablersManager::runOnModule (Module &M) {
   errs() << "EnablersManager:   Try to improve all " << loopsToParallelize->size() << " loops, one at a time\n";
 
   /*
+   * Remove loops that have not been executed
+   */
+  auto hot = noelle.getProfiles();
+  auto filter = [hot](LoopStructure *l) -> bool {
+    if (!hot->hasBeenExecuted(l)){
+      return true;
+    }
+    return false;
+  };
+  noelle.filterOutLoops(*loopsToParallelize, filter);
+
+  /*
    * Organize loops in a forest.
    */
   auto forest = noelle.organizeLoopsInTheirNestingForest(*loopsToParallelize);
 
   /*
-   * Parallelize the loops selected.
+   * Fetch the trees.
+   */
+  auto trees = forest->getTrees();
+
+  /*
+   * Sort the trees by hotness
+   */
+  auto sortedTrees = noelle.sortByHotness(trees);
+
+  /*
+   * Transform the loops selected.
    */
   auto modified = false;
   std::unordered_map<Function *, bool> modifiedFunctions;
-  for (auto tree : forest->getTrees()){
+  for (auto tree : sortedTrees){
 
     /*
      * Parallelize all loops within this tree starting from the leafs.
