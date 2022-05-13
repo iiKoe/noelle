@@ -32,7 +32,7 @@ namespace llvm::noelle {
   template <class T, class SubT> class DGEdgeBase;
   template <class T> class DGEdge;
 
-  enum DataDependenceType { DG_DATA_NONE, DG_DATA_RAW, DG_DATA_WAR, DG_DATA_WAW };
+  enum DataDependenceType { DG_DATA_NONE, DG_DATA_RAW, DG_DATA_WAR, DG_DATA_WAW, DG_DATA_RAR };
 
   template <class T>
   class DG {
@@ -286,6 +286,7 @@ namespace llvm::noelle {
     bool isRAWDependence() const { return dataDepType == DG_DATA_RAW; }
     bool isWARDependence() const { return dataDepType == DG_DATA_WAR; }
     bool isWAWDependence() const { return dataDepType == DG_DATA_WAW; }
+    bool isRARDependence() const { return dataDepType == DG_DATA_RAR; }
     bool isControlDependence() const { return isControl; }
     bool isDataDependence() const { return !isControl; }
     bool isLoopCarriedDependence() const { return isLoopCarried; }
@@ -355,6 +356,7 @@ namespace llvm::noelle {
       if (str == "RAW") return DG_DATA_RAW;
       else if (str == "WAR")  return DG_DATA_WAR;
       else if (str == "WAW")  return DG_DATA_WAW;
+      else if (str == "RAR")  return DG_DATA_RAR;
       else return DG_DATA_NONE;
     }
 
@@ -800,6 +802,7 @@ namespace llvm::noelle {
     if (this->isRAWDependence()) return "RAW";
     else if (this->isWARDependence()) return "WAR";
     else if (this->isWAWDependence()) return "WAW";
+    else if (this->isRARDependence()) return "RAR";
     else return "NONE";
   }
 

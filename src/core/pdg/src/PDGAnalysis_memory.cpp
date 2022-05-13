@@ -67,6 +67,14 @@ void PDGAnalysis::iterateInstForLoad (PDG *pdg, Function &F, AAResults &AA, Data
     }
 
     /*
+     * Check loads.
+     */
+    if (auto otherLoad = dyn_cast<LoadInst>(I)) {
+      this->addEdgeFromMemoryAlias<LoadInst, LoadInst>(pdg, F, AA, load, otherLoad, DG_DATA_RAR);
+      continue ;
+    }
+
+    /*
      * Check calls.
      */
     if (auto call = dyn_cast<CallBase>(I)) {
@@ -239,6 +247,7 @@ void PDGAnalysis::addEdgeFromFunctionModRef (PDG *pdg, Function &F, AAResults &A
 
 void PDGAnalysis::addEdgeFromFunctionModRef (PDG *pdg, Function &F, AAResults &AA, CallBase *call, LoadInst *load, bool addEdgeFromCall) {
   BitVector bv(3, false);
+  auto makeRefEdge = false, makeModEdge = false;
 
   /*
    * We cannot have memory dependences from a call to a deallocator (e.g., free).
@@ -252,10 +261,15 @@ void PDGAnalysis::addEdgeFromFunctionModRef (PDG *pdg, Function &F, AAResults &A
    */
   switch (AA.getModRefInfo(call, MemoryLocation::get(load))) {
     case ModRefInfo::NoModRef:
-    case ModRefInfo::Ref:
       return;
+    case ModRefInfo::Ref:
+      bv[0] = true;
+      break;
     case ModRefInfo::Mod:
+      bv[1] = true;
+      break;
     case ModRefInfo::ModRef:
+      bv[2] = true;
       break;
   }
 
@@ -290,29 +304,63 @@ void PDGAnalysis::addEdgeFromFunctionModRef (PDG *pdg, Function &F, AAResults &A
     if (isSafeToQueryModRefOfSVF(call, bv)) {
       switch (NoelleSVFIntegration::getModRefInfo(call, MemoryLocation::get(load))) {
         case ModRefInfo::NoModRef:
-        case ModRefInfo::Ref:
           return;
-
+        case ModRefInfo::Ref:
+          bv[0] = true;
+          break;
         case ModRefInfo::Mod:
+          bv[1] = true;
+          break;
         case ModRefInfo::ModRef:
+          bv[2] = true;
           break;
       }
     }
   }
 
   /*
+   * NoModRef when one says Mod and another says Ref
+   */
+  if (bv[0] && bv[1]) {
+    return;
+  }
+  if (bv[0]) {
+    makeRefEdge = true;
+  } else if (bv[1]) {
+    makeModEdge = true;
+  } else {
+    makeRefEdge = makeModEdge = true;
+  }
+
+  /*
    * There is a dependence.
    */
-  if (addEdgeFromCall) {
-    pdg->addEdge(call, load)->setMemMustType(true, false, DG_DATA_RAW);
+  if (makeRefEdge) {
+    if (addEdgeFromCall) {
+      pdg->addEdge(call, load)->setMemMustType(true, false, DG_DATA_RAR);
 
-  } else {
+    } else {
 
-    /*
-     * We cannot have memory dependences from a memory instruction to allocators as they always return new memory.
-     */
-    if (!Utils::isAllocator(call)){
-      pdg->addEdge(load, call)->setMemMustType(true, false, DG_DATA_WAR);
+      /*
+       * We cannot have memory dependences from a memory instruction to allocators as they always return new memory.
+       */
+      if (!Utils::isAllocator(call)){
+        pdg->addEdge(load, call)->setMemMustType(true, false, DG_DATA_RAR);
+      }
+    }
+  }
+  if (makeModEdge) {
+    if (addEdgeFromCall) {
+      pdg->addEdge(call, load)->setMemMustType(true, false, DG_DATA_RAW);
+
+    } else {
+
+      /*
+       * We cannot have memory dependences from a memory instruction to allocators as they always return new memory.
+       */
+      if (!Utils::isAllocator(call)){
+        pdg->addEdge(load, call)->setMemMustType(true, false, DG_DATA_WAR);
+      }
     }
   }
 
